@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>αブレンド</title>
+<script>
+let canvas = new Array(3);
+let context = new Array(3);
+let imageData = new Array(3);
+let status;
+const [width, height] = [640, 480];
+
+const init = () => {
+    // キャンバスの取得
+    for (let i = 0; i < 3; i++) {
+        canvas[i] = document.getElementById(`image_${i}`);
+        context[i] = canvas[i].getContext("2d");
+        [canvas[i].width, canvas[i].height] = [width, height];
+        if (i < 2) {
+            canvas[i].style.width = `${width/4}px`;
+            canvas[i].style.height = `${height/4}px`;
+        }
+        context[i].fillStyle = "#FFFFFF";
+        context[i].fillRect(0, 0, width, height);
+        imageData[i] = context[i].getImageData(0, 0, width, height);
+    }
+    // ストップボタンの無効化
+    document.getElementById("stop").disabled = true;
+}
+
+const loadImage = (files, i) => {
+    // 画像の読み込み
+    const image = new Image();
+    if (files.length > 0) image.src = URL.createObjectURL(files[0]);
+    image.onload = () => {
+        // 画像を描画
+        let sx, sy, sw, sh;
+        if (image.width > image.height) {
+            [sw, sh] = [image.width, image.width*height/width];
+            [sx, sy] = [0, image.height/2 - sh/2];
+        } else {
+            [sw, sh] = [image.height*width/height, image.height];
+            [sx, sy] = [image.width/2 - sw/2, 0];
+        }
+        context[i].fillStyle = "#FFFFFF";
+        context[i].fillRect(0, 0, width, height);
+        context[i].drawImage(image, sx, sy, sw, sh, 0, 0, width, height);
+        imageData[i] = context[i].getImageData(0, 0, width, height);
+    }
+}
+
+const startBlend = async () => {
+    // ラジオボタン、スライダー、スタートボタンの無効化
+    document.getElementById("speed").disabled = true;
+    for (radio of document.getElementsByName("dir")) {
+        radio.disabled = true;
+    }
+    document.getElementById("start").disabled = true;
+    // ストップボタンの有効化
+    document.getElementById("stop").disabled = false;
+    // αブレンドスタート
+    status = "start";
+    const speed = document.getElementById("speed").value * 10;
+    for (let i = 0; i <= 100; i++) {
+        await promiseBlend(i/100, speed);
+        document.getElementById("progress").value = i;
+        document.getElementById("per").innerText = i;
+        if (status == "stop") break;
+    }
+    stopBlend();
+}
+
+const stopBlend = () => {
+    // αブレンドストップ
+    status = "stop";
+    // ラジオボタン、スライダー、スタートボタンの有効化
+    document.getElementById("speed").disabled = false;
+    for (radio of document.getElementsByName("dir")) {
+        radio.disabled = false;
+    }
+    document.getElementById("start").disabled = false;
+    // ストップボタンの無効化
+    document.getElementById("stop").disabled = true;
+}
+
+const promiseBlend = (rate, t) => {
+    // αブレンドをt秒後に非同期で実行するプロセスを返す
+    return new Promise(resolve => {
+        setTimeout(() => {
+            blend(rate);
+            resolve();
+        }, t);
+    });
+}
+
+const blend = rate => {
+    // αブレンド
+    let a = rate;
+    for (let y = 0; y < height; y++) {
+        if (document.getElementById("dir_u").checked) {
+            // 上→下
+            a = (rate * height*2 - y) / height;
+        } else if (document.getElementById("dir_d").checked) {
+            // 下→上
+            a = (rate * height*2 - (height - y)) / height;
+        }
+        for (let x = 0; x < width; x++) {
+            if (document.getElementById("dir_d").checked) {
+                // 左→右
+                a = (rate * width*2 - x) / width;
+            } else if (document.getElementById("dir_r").checked) {
+                // 右→左
+                a = (rate * width*2 - (width - x)) / width;
+            }
+            if (a < 0) a = 0;
+            if (a > 1) a = 1;
+            const index = (y * width + x) * 4;
+            const r0 = imageData[0].data[index];
+            const g0 = imageData[0].data[index+1];
+            const b0 = imageData[0].data[index+2];
+            const r1 = imageData[1].data[index];
+            const g1 = imageData[1].data[index+1];
+            const b1 = imageData[1].data[index+2];
+            imageData[2].data[index] = Math.floor(r0*(1-a) + r1*a);
+            imageData[2].data[index+1] = Math.floor(g0*(1-a) + g1*a);
+            imageData[2].data[index+2] = Math.floor(b0*(1-a) + b1*a);
+        }
+    }
+    context[2].putImageData(imageData[2], 0, 0);
+}
+</script>
+<style>
+div {float: left;}
+canvas {border: thin solid #000000;}
+hr {clear: both;}
+</style>
+</head>
+<body onload="init()">
+<p>αブレンド</p>
+<div>
+<input type="file" accept="image/*" onchange="loadImage(this.files, 0)"><br>
+<canvas id="image_0"></canvas>
+</div>
+<div>
+<input type="file" accept="image/*" onchange="loadImage(this.files, 1)"><br>
+<canvas id="image_1"></canvas>
+</div>
+<hr>
+速い<input type="range" id="speed" value="5" min="1" max="10">遅い
+<input type="radio" id="dir_a" name="dir" checked>全体
+<input type="radio" id="dir_l" name="dir">左→右
+<input type="radio" id="dir_r" name="dir">右→左
+<input type="radio" id="dir_u" name="dir">上→下
+<input type="radio" id="dir_d" name="dir">下→上
+<hr>
+<input type="button" id="start" value="スタート" onclick="startBlend()">
+<input type="button" id="stop" value="ストップ" onclick="stopBlend()">
+<progress id="progress" value="0" max="100"></progress>
+<span id="per">0</span>%
+<br>
+<canvas id="image_2"></canvas>
+</body>
+</html>
